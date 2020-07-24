@@ -1,0 +1,65 @@
+import zipfile
+
+from PIL import Image
+import pytesseract
+import cv2 as cv
+import numpy as np
+import math
+
+# loading the face detection classifier
+face_cascade = cv.CascadeClassifier('readonly/haarcascade_frontalface_default.xml')
+
+# the rest is up to you!
+
+#Load zip files into dictionary
+rgb_images = {}
+with zipfile.ZipFile('readonly/small_img.zip', 'r') as zipped:
+    for entry in zipped.infolist():
+        with zipped.open(entry) as file:
+            img = Image.open(file).convert('RGB')  # convert image to RGB mode
+            rgb_images[entry.filename] = {'pil_img':img} # add converted image to image dictionary
+
+# Grab text from the images and add to appropriate images dictionary key
+for image in rgb_images.keys():
+    text = pytesseract.image_to_string(rgb_images[image]['pil_img']) #run tesseract on each images text value
+    rgb_images[image]['text'] = text  # add OCR'd text to each images text key
+    
+# Loop through dictionary of photos and place bounding boxes on faces
+for image in rgb_images.keys():
+    cv_image = np.array(rgb_images[image]['pil_img']) #array cast each image
+    img_gray = cv.cvtColor(cv_image, cv.COLOR_BGR2GRAY)
+    bounding_boxes = face_cascade.detectMultiScale(img_gray, 1.3, 5)  #use Harr cascading to detect faces
+    rgb_images[image]['faces'] = []
+    for x,y,w,h in bounding_boxes:
+        face_box = rgb_images[image]['pil_img'].crop((x,y,x+w,y+h))  # crop out face given dimensions of bounding box
+        rgb_images[image]['faces'].append(face_box)
+        
+# Resize images for contact sheet
+for image in rgb_images.keys():
+    for face in rgb_images[image]['faces']:
+        face.thumbnail((100,100),Image.ANTIALIAS) #convert to thumbnail and anti-alias image
+
+#search the keyword in every images's text and return the faces
+def search(keyword):
+    for image in rgb_images:
+        if (keyword in rgb_images[image]['text']):  # check if search word is in image text key
+            if(len(rgb_images[image]['faces']) != 0):  # if a face found in prior analysis, add to contact sheet
+                print("Result found in file {}".format(image))
+                h = math.ceil(len(rgb_images[image]['faces'])/5)
+                contact_sheet=Image.new('RGB',(500, 100*h))
+                xc = 0
+                yc = 0
+                for image in rgb_images[image]['faces']:
+                    contact_sheet.paste(image, (xc, yc))
+                    if xc + 100 == contact_sheet.width:
+                        xc = 0
+                        yc += 100
+                    else:
+                        xc += 100
+                        
+                display(contact_sheet)
+            else:
+                print("Result found in file {} \nBut there were no faces in that file\n\n".format(img_name))
+    return
+
+search('Christopher')
